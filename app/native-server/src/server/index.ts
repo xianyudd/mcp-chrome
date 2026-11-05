@@ -249,9 +249,7 @@ export class Server {
           reply.raw.writeHead(HTTP_STATUS.INTERNAL_SERVER_ERROR, {
             'Content-Type': 'application/json',
           });
-          reply.raw.end(
-            JSON.stringify({ error: ERROR_MESSAGES.MCP_REQUEST_PROCESSING_ERROR }),
-          );
+          reply.raw.end(JSON.stringify({ error: ERROR_MESSAGES.MCP_REQUEST_PROCESSING_ERROR }));
         } else if (!reply.raw.writableEnded) {
           // Headers already written by the SDK — nothing meaningful can be sent,
           // but the hijacked response must still be closed or the request hangs.
@@ -272,12 +270,14 @@ export class Server {
         return;
       }
 
+      // Fastify must hand the response over before the SDK writes to it, or
+      // Fastify's own reply lifecycle writes the same response a second time.
       reply.hijack();
-      reply.raw.setHeader('Content-Type', 'text/event-stream');
-      reply.raw.setHeader('Cache-Control', 'no-cache');
-      reply.raw.setHeader('Connection', 'keep-alive');
-      reply.raw.flushHeaders();
-
+      // The SDK's transport builds its own `Response` for the SSE stream and
+      // writes the headers itself. Pre-writing them here flushed the response
+      // early, so the SDK's write hit "Cannot write headers after they are sent
+      // to the client" and the GET stream died before the client could attach
+      // — which made the client reconnect every second.
       try {
         await transport.handleRequest(request.raw, reply.raw);
       } catch (error) {
@@ -314,9 +314,7 @@ export class Server {
           reply.raw.writeHead(HTTP_STATUS.INTERNAL_SERVER_ERROR, {
             'Content-Type': 'application/json',
           });
-          reply.raw.end(
-            JSON.stringify({ error: ERROR_MESSAGES.MCP_SESSION_DELETION_ERROR }),
-          );
+          reply.raw.end(JSON.stringify({ error: ERROR_MESSAGES.MCP_SESSION_DELETION_ERROR }));
         } else if (!reply.raw.writableEnded) {
           reply.raw.end();
         }
